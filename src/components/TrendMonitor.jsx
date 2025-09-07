@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Card } from './Card';
 import { TrendCard } from './TrendCard';
-import { Filter, TrendingUp, Flame, Clock } from 'lucide-react';
+import { Filter, TrendingUp, Flame, Clock, RefreshCw } from 'lucide-react';
+import { getComprehensiveTrendData, filterTrendData, getTrendStatistics } from '../services/trendService';
 
 const mockTrendData = [
   {
@@ -78,17 +79,62 @@ const mockTrendData = [
 
 export function TrendMonitor() {
   const [trendData, setTrendData] = useState([]);
+  const [filteredData, setFilteredData] = useState([]);
+  const [trendStats, setTrendStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all');
   const [sortBy, setSortBy] = useState('volume');
+  const [selectedChain, setSelectedChain] = useState('ethereum');
+
+  const loadTrendData = async (showRefreshIndicator = false) => {
+    try {
+      if (showRefreshIndicator) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      
+      setError(null);
+
+      // Fetch comprehensive trend data with sentiment analysis
+      const trends = await getComprehensiveTrendData(selectedChain, 20);
+      const stats = getTrendStatistics(trends);
+
+      setTrendData(trends);
+      setTrendStats(stats);
+      
+      // Apply initial filtering
+      const filtered = filterTrendData(trends, filter, sortBy);
+      setFilteredData(filtered);
+    } catch (err) {
+      console.error('Failed to load trend data:', err);
+      setError('Failed to load trend data. Please try again.');
+      
+      // Fallback to mock data
+      setTrendData(mockTrendData);
+      setFilteredData(mockTrendData);
+      setTrendStats(getTrendStatistics(mockTrendData));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setTrendData(mockTrendData);
-      setLoading(false);
-    }, 1500);
-  }, []);
+    loadTrendData();
+  }, [selectedChain]);
+
+  useEffect(() => {
+    // Re-filter data when filter or sort changes
+    const filtered = filterTrendData(trendData, filter, sortBy);
+    setFilteredData(filtered);
+  }, [trendData, filter, sortBy]);
+
+  const handleRefresh = () => {
+    loadTrendData(true);
+  };
 
   const filteredAndSortedData = trendData
     .filter(token => {
