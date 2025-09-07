@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { TokenDisplay } from './TokenDisplay';
 import { Card } from './Card';
-import { TrendingUp, TrendingDown, DollarSign, Coins } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Coins, RefreshCw } from 'lucide-react';
+import { useAccount } from 'wagmi';
+import { fetchAggregatedPortfolio, calculatePortfolioStats } from '../services/portfolioService';
+import { upsertUser, getUserByAddress } from '../services/databaseService';
 
 // Mock portfolio data
 const mockPortfolioData = [
@@ -49,39 +52,74 @@ const mockPortfolioData = [
 
 export function PortfolioDashboard() {
   const [portfolioData, setPortfolioData] = useState([]);
-  const [totalValue, setTotalValue] = useState(0);
-  const [totalChange, setTotalChange] = useState(0);
+  const [portfolioStats, setPortfolioStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const { address, isConnected } = useAccount();
+
+  const loadPortfolioData = async (showRefreshIndicator = false) => {
+    if (!isConnected || !address) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      if (showRefreshIndicator) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      
+      setError(null);
+
+      // Ensure user exists in database
+      let user = await getUserByAddress(address);
+      if (!user) {
+        user = await upsertUser({
+          userId: address,
+          ethAddress: address,
+          connectedWallets: [address],
+        });
+      }
+
+      // Fetch aggregated portfolio data
+      const portfolio = await fetchAggregatedPortfolio(address);
+      const stats = calculatePortfolioStats(portfolio);
+
+      setPortfolioData(portfolio);
+      setPortfolioStats(stats);
+    } catch (err) {
+      console.error('Failed to load portfolio:', err);
+      setError('Failed to load portfolio data. Please try again.');
+      
+      // Fallback to mock data
+      setPortfolioData(mockPortfolioData);
+      setPortfolioStats(calculatePortfolioStats(mockPortfolioData));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    // Simulate API call
-    setTimeout(() => {
-      setPortfolioData(mockPortfolioData);
-      
-      // Calculate totals
-      const total = mockPortfolioData.reduce((sum, token) => {
-        return sum + parseFloat(token.value.replace('$', '').replace(',', ''));
-      }, 0);
-      
-      const weightedChange = mockPortfolioData.reduce((sum, token) => {
-        const value = parseFloat(token.value.replace('$', '').replace(',', ''));
-        return sum + (token.change24h * (value / total));
-      }, 0);
-      
-      setTotalValue(total);
-      setTotalChange(weightedChange);
-    }, 1000);
-  }, []);
+    loadPortfolioData();
+  }, [address, isConnected]);
 
-  const stats = [
+  const handleRefresh = () => {
+    loadPortfolioData(true);
+  };
+
+  const stats = portfolioStats ? [
     {
       label: 'Total Portfolio Value',
-      value: `$${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      value: portfolioStats.totalValue,
       icon: DollarSign,
-      change: totalChange
+      change: parseFloat(portfolioStats.change24hPercent)
     },
     {
       label: 'Total Tokens',
-      value: portfolioData.length.toString(),
+      value: portfolioStats.tokenCount.toString(),
       icon: Coins,
       change: null
     },
@@ -93,11 +131,11 @@ export function PortfolioDashboard() {
     },
     {
       label: 'Active Chains',
-      value: [...new Set(portfolioData.map(t => t.chain))].length.toString(),
+      value: portfolioStats.chainCount.toString(),
       icon: TrendingDown,
       change: null
     }
-  ];
+  ] : [];
 
   return (
     <div className="space-y-6">
@@ -107,7 +145,26 @@ export function PortfolioDashboard() {
           <h1 className="text-3xl font-bold text-white">Portfolio Dashboard</h1>
           <p className="text-gray-400 mt-1">Track your meme coin holdings across all chains</p>
         </div>
+        <div className="flex items-center space-x-3 mt-4 sm:mt-0">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center space-x-2 px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={`text-purple-400 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="text-purple-400 font-medium">
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </span>
+          </button>
+        </div>
       </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-4">
+          <p className="text-red-400">{error}</p>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

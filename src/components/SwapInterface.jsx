@@ -1,7 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from './Card';
-import { ArrowUpDown, Settings, AlertTriangle } from 'lucide-react';
+import { ArrowUpDown, Settings, AlertTriangle, Loader2 } from 'lucide-react';
+import { useAccount } from 'wagmi';
 import { usePaymentContext } from '../hooks/usePaymentContext';
+import { 
+  getAvailableTokens, 
+  getSwapQuote, 
+  executeSwap, 
+  validateSwapParams,
+  getSupportedChains 
+} from '../services/swapService';
+import { saveSwapTransaction } from '../services/databaseService';
 
 const supportedTokens = [
   { symbol: 'PEPE', name: 'Pepe', chain: 'Ethereum', logo: '🐸' },
